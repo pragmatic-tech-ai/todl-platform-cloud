@@ -6,7 +6,18 @@ import type { ChainedAuditRecord } from '@pragmatic-tech-ai/todl-identity-host'
 
 /** Postgres-backed audit sink. Mirrors FileAuditSink: it persists only the ordered raw event log (per-tenant
  *  sequence) and rebuilds the deterministic hash chain by replaying persisted events through a fresh
- *  HashChainedAuditSink on Open. Record chains in memory then inserts the raw event; Verify/Records delegate. */
+ *  HashChainedAuditSink on Open. Record chains in memory then inserts the raw event; Verify/Records delegate.
+ *
+ *  Tamper scope: tamper-evidence is in-session. HashChainedAuditSink detects mutation of in-memory records
+ *  between Record and Verify, and replay is deterministic (identical hashes across reopen). Because the chain is
+ *  recomputed from the raw event log on Open, tampering with persisted rows (editing, reordering, or deleting them
+ *  in the database) is NOT detected: reopen simply rebuilds a fresh valid chain over whatever rows exist. This
+ *  matches FileAuditSink; persisted hash-chain tamper-evidence is tracked as a follow-up.
+ *
+ *  Single-writer: Record is single-writer per tenant. It computes the next per-tenant seq as
+ *  COALESCE(MAX(seq),-1)+1 then inserts, and chains the event in memory before the insert. Concurrent Record calls
+ *  for one tenant can read the same MAX(seq); the unique index rejects the loser, but its event is already in the
+ *  in-memory chain. A single writer per tenant is assumed. */
 export class SqlAuditStore implements IAuditSink
 {
     private static readonly Table = 'identity_audit'
