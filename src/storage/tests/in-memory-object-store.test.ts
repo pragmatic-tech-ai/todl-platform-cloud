@@ -86,6 +86,15 @@ test('Exists is true for the root even when empty (parity with the real backend)
     assert.equal(await store.Exists(''), true)
 })
 
+test('renaming a folder to the root yields normalized top-level keys (no leading slash)', async () =>
+{
+    const store = new InMemoryObjectStore('object://bucket')
+    await store.WriteText('from/a.txt', '1')
+    await store.Rename('from', '')
+    assert.equal(await store.ReadText('a.txt'), '1')
+    assert.deepEqual([...(await store.List(''))].map(e => e.Name), ['a.txt'])
+})
+
 test('it omits the filesystem-only companion capabilities', () =>
 {
     const store = new InMemoryObjectStore('object://bucket')

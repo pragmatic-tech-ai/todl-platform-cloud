@@ -194,7 +194,7 @@ export class InMemoryObjectStore implements IStorage
         }
         if (key.startsWith(src + InMemoryObjectStore.Separator))
         {
-            return dst + key.slice(src.length)
+            return InMemoryObjectStore.Normalize(dst + key.slice(src.length))
         }
         return undefined
     }
