@@ -3,3 +3,4 @@ export { ObjectStoreProviderRegistry } from './storage/object-store-provider-reg
 export { CloudSecretManagerSecretStore } from './secrets/cloud-secret-manager-secret-store.js'
 export { PgSession } from './sql/pg-session.js'
 export { SqlLocalAccountStore } from './identity/sql-local-account-store.js'
+export { SqlServiceTokenStore } from './identity/sql-service-token-store.js'
