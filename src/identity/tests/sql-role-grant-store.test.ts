@@ -9,18 +9,25 @@ SqlTestSessions.Describe('SqlRoleGrantStore', (makeSession, backend) =>
 {
     const tenant = new Tenant('grant-t1', TenantKind.SelfHosted, 'T1')
 
-    test(`${backend}: Save then GrantsFor returns the subject's grants (tenant ignored in lookup)`, async () =>
+    test(`${backend}: GrantsFor ignores the passed tenant and round-trips enums and path`, async () =>
     {
         const p1 = `subj-${randomUUID()}`
         const p2 = `subj-${randomUUID()}`
         const store = await SqlRoleGrantStore.Open(await makeSession())
-        await store.Save(new Grant(p1, Role.Owner, new ResourceRef(ResourceKind.Tenant, 'grant-t1', [])))
-        await store.Save(new Grant(p2, Role.Viewer, new ResourceRef(ResourceKind.Model, 'grant-t1', ['m'])))
-        const grants = await store.GrantsFor(p1, tenant)
+        await store.Save(new Grant(p1, Role.Owner, new ResourceRef(ResourceKind.Model, 'grant-t1', ['a', 'b'])))
+        await store.Save(new Grant(p2, Role.Viewer, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x'])))
+        const otherTenant = new Tenant('other-t', TenantKind.SelfHosted, 'OT')
+        const grants = await store.GrantsFor(p1, otherTenant)
         assert.equal(grants.length, 1)
         assert.equal(grants[0]!.Role, Role.Owner)
-        assert.equal(grants[0]!.Resource.Kind, ResourceKind.Tenant)
-        assert.deepEqual([...grants[0]!.Resource.Path], [])
+        assert.equal(grants[0]!.Resource.Kind, ResourceKind.Model)
+        assert.deepEqual([...grants[0]!.Resource.Path], ['a', 'b'])
+        assert.equal(grants[0]!.Resource.TenantId, 'grant-t1')
+        const g2 = await store.GrantsFor(p2, otherTenant)
+        assert.equal(g2.length, 1)
+        assert.equal(g2[0]!.Role, Role.Viewer)
+        assert.equal(g2[0]!.Resource.Kind, ResourceKind.Project)
+        assert.deepEqual([...g2[0]!.Resource.Path], ['x'])
     })
 
     test(`${backend}: Save does not dedup identical grants`, async () =>
@@ -30,6 +37,13 @@ SqlTestSessions.Describe('SqlRoleGrantStore', (makeSession, backend) =>
         const grant = new Grant(p3, Role.Editor, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x']))
         await store.Save(grant)
         await store.Save(grant)
-        assert.equal((await store.GrantsFor(p3, tenant)).length, 2)
+        const grants = await store.GrantsFor(p3, tenant)
+        assert.equal(grants.length, 2)
+        for (const g of grants)
+        {
+            assert.equal(g.Role, Role.Editor)
+            assert.equal(g.Resource.Kind, ResourceKind.Project)
+            assert.deepEqual([...g.Resource.Path], ['x'])
+        }
     })
 })

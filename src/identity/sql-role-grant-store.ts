@@ -18,12 +18,13 @@ export class SqlRoleGrantStore implements IRoleGrantStore
 
     public static async Open(session: ISqlSession): Promise<SqlRoleGrantStore>
     {
-        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlRoleGrantStore.Table} (subject text, role integer, resource_kind integer, resource_tenant_id text, resource_path text)`, [])
+        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlRoleGrantStore.Table} (subject text NOT NULL, role integer NOT NULL, resource_kind integer NOT NULL, resource_tenant_id text NOT NULL, resource_path text NOT NULL)`, [])
         return new SqlRoleGrantStore(session)
     }
 
     public async GrantsFor(subject: string, _tenant: Tenant): Promise<readonly Grant[]>
     {
+        // Grant order is not significant: GrantsFor returns an unordered bag the authorization engine scans; a serial column is intentionally avoided (plan's no-serial constraint).
         const rows = await this.session.Query(`SELECT subject, role, resource_kind, resource_tenant_id, resource_path FROM ${SqlRoleGrantStore.Table} WHERE subject = $1`, [subject])
         return rows.map(SqlRoleGrantStore.ToGrant)
     }
