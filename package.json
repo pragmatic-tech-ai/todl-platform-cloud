@@ -17,10 +17,13 @@
   "dependencies": {
     "@pragmatic-tech-ai/todl": "file:../TODL",
     "@pragmatic-tech-ai/todl-runtime": "file:../todl-runtime",
-    "@pragmatic-tech-ai/todl-identity": "file:../todl-identity"
+    "@pragmatic-tech-ai/todl-identity": "file:../todl-identity",
+    "pg": "^8.13.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
+    "@types/pg": "^8.11.0",
+    "pg-mem": "^3.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0"
   }
