@@ -27,7 +27,7 @@ export class SqlServiceTokenStore implements IServiceTokenStore
 
     public static async Open(session: ISqlSession, now: () => Date = () => new Date()): Promise<SqlServiceTokenStore>
     {
-        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlServiceTokenStore.Table} (hash text PRIMARY KEY, token_ref text, principal_id text, tenant_id text, scopes text, expires_at text, revoked boolean)`, [])
+        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlServiceTokenStore.Table} (hash text PRIMARY KEY, token_ref text NOT NULL, principal_id text NOT NULL, tenant_id text NOT NULL, scopes text NOT NULL, expires_at text, revoked boolean NOT NULL)`, [])
         return new SqlServiceTokenStore(session, now)
     }
 
