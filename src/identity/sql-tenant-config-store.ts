@@ -17,7 +17,7 @@ export class SqlTenantConfigStore implements ITenantConfigStore
 
     public static async Open(session: ISqlSession): Promise<SqlTenantConfigStore>
     {
-        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlTenantConfigStore.Table} (tenant_id text PRIMARY KEY, pack_id text, delegation_depth integer, provider_settings text, group_role_map text, claims_mapping text)`, [])
+        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlTenantConfigStore.Table} (tenant_id text PRIMARY KEY, pack_id text NOT NULL, delegation_depth integer NOT NULL, provider_settings text NOT NULL, group_role_map text NOT NULL, claims_mapping text NOT NULL)`, [])
         return new SqlTenantConfigStore(session)
     }
 

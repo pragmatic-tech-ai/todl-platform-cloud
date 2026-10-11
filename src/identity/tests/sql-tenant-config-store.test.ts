@@ -29,7 +29,12 @@ SqlTestSessions.Describe('SqlTenantConfigStore', (makeSession, backend) =>
         const store = await SqlTenantConfigStore.Open(await makeSession())
         await store.Save(tid, config())
         await store.Save(tid, new IdentityConfig('pack-2', DelegationDepth.AuthnDirectory, new Map(), new Map(), new Map()))
-        assert.equal((await store.Get(tid))!.PackId, 'pack-2')
+        const got = (await store.Get(tid))!
+        assert.equal(got.PackId, 'pack-2')
+        assert.equal(got.DelegationDepth, DelegationDepth.AuthnDirectory)
+        assert.equal(got.ProviderSettings.size, 0)
+        assert.equal(got.GroupRoleMap.size, 0)
+        assert.equal(got.ClaimsMapping.size, 0)
         assert.ok((await store.List()).includes(tid))
     })
 })
