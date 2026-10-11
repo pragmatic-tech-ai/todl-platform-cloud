@@ -23,7 +23,7 @@ export class SqlTestSessions
         }
     }
 
-    private static MemPool(): Pool
+    public static MemPool(): Pool
     {
         const db = newDb()
         const pg = db.adapters.createPg()

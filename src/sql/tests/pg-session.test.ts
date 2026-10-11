@@ -1,17 +1,13 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { newDb } from 'pg-mem'
-import type { Pool } from 'pg'
 import { PgSession } from '../pg-session.js'
+import { SqlTestSessions } from '../../testing/sql-test-sessions.js'
 
 class SessionFixture
 {
     public static Mem(): PgSession
     {
-        const db = newDb()
-        const pg = db.adapters.createPg()
-        const pool = new pg.Pool() as unknown as Pool
-        return new PgSession(pool)
+        return new PgSession(SqlTestSessions.MemPool())
     }
 }
 
@@ -38,5 +34,11 @@ test('Execute returns the affected-row count', async () =>
 test('Query against a missing table surfaces the error (not swallowed)', async () =>
 {
     const session = SessionFixture.Mem()
-    await assert.rejects(() => session.Query('SELECT * FROM nope', []))
+    await assert.rejects(() => session.Query('SELECT * FROM nope', []), /relation|nope/i)
+})
+
+test('Dispose resolves without throwing', async () =>
+{
+    const session = SessionFixture.Mem()
+    await session.Dispose()
 })

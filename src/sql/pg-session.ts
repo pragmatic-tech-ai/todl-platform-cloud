@@ -1,9 +1,9 @@
 import type { Pool } from 'pg'
 import type { ISqlSession, SqlRow } from '@pragmatic-tech-ai/todl'
 
-/** A clean ISqlSession over a pg.Pool for the cloud identity stores. Unlike the connectors-host PgSqlSession
- *  it does NOT swallow undefined-table errors: identity tables are created by each store's CREATE TABLE IF
- *  NOT EXISTS bootstrap, so a missing table is a real fault that must surface, never be masked as empty. */
+/** A clean ISqlSession over a pg.Pool for the cloud identity stores. It does NOT mask undefined-table errors as
+ *  empty results: identity tables are created by each store's CREATE TABLE IF NOT EXISTS bootstrap, so a missing
+ *  table is a real fault that must surface. */
 export class PgSession implements ISqlSession
 {
     private readonly pool: Pool
