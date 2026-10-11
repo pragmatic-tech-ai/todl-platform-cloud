@@ -18,6 +18,7 @@
     "@pragmatic-tech-ai/todl": "file:../TODL",
     "@pragmatic-tech-ai/todl-runtime": "file:../todl-runtime",
     "@pragmatic-tech-ai/todl-identity": "file:../todl-identity",
+    "@pragmatic-tech-ai/todl-identity-host": "file:../todl-identity-host",
     "pg": "^8.13.0"
   },
   "devDependencies": {
