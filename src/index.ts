@@ -4,3 +4,4 @@ export { CloudSecretManagerSecretStore } from './secrets/cloud-secret-manager-se
 export { PgSession } from './sql/pg-session.js'
 export { SqlLocalAccountStore } from './identity/sql-local-account-store.js'
 export { SqlServiceTokenStore } from './identity/sql-service-token-store.js'
+export { SqlSessionStore } from './identity/sql-session-store.js'
