@@ -28,7 +28,7 @@ export class SqlSessionStore implements ISessionManager
 
     public static async Open(session: ISqlSession, ttlMs: number = SqlSessionStore.DefaultTtlMs, now: () => Date = () => new Date()): Promise<SqlSessionStore>
     {
-        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlSessionStore.Table} (hash text PRIMARY KEY, principal_id text, tenant_id text, issued_at text, expires_at text)`, [])
+        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlSessionStore.Table} (hash text PRIMARY KEY, principal_id text NOT NULL, tenant_id text NOT NULL, issued_at text NOT NULL, expires_at text NOT NULL)`, [])
         return new SqlSessionStore(session, ttlMs, now)
     }
 
@@ -51,7 +51,7 @@ export class SqlSessionStore implements ISessionManager
             return null
         }
         const result = new Session(token, String(row.principal_id), String(row.tenant_id), new Date(String(row.issued_at)), new Date(String(row.expires_at)), AuthMethod.Local)
-        if (result.IsExpired(this.now()))
+        if (Number.isNaN(result.ExpiresAt.getTime()) || result.IsExpired(this.now()))
         {
             await this.session.Execute(`DELETE FROM ${SqlSessionStore.Table} WHERE hash = $1`, [hash])
             return null
