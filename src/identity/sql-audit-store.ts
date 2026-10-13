@@ -53,7 +53,9 @@ export class SqlAuditStore implements IAuditSink
             }
             catch
             {
-                // Idempotent migration: a duplicate-column error on reopen is the expected, swallowed case.
+                // Idempotent migration: the expected case is a duplicate-column error on reopen. This catch
+                // swallows ANY ALTER failure by design (no portable error code across pg drivers); a genuine
+                // schema/connectivity failure is not hidden — it surfaces on the SELECT/INSERT that follow.
             }
         }
         const chain = new HashChainedAuditSink()
