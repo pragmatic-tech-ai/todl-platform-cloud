@@ -32,7 +32,9 @@ SqlTestSessions.Describe('SqlAuditStore anchoring', (makeSession, backend) =>
         const store = await SqlAuditStore.Open(session, await anchoring(session))
         await store.Record(event(t, 'a'))
         await store.Record(event(t, 'b'))
-        await session.Execute('DELETE FROM identity_audit WHERE tenant_id = $1 AND seq >= $2', [t, 1])
+        await store.Record(event(t, 'c'))
+        // seq is 0-based; delete only the last row (seq 2) so seq 0 and 1 survive — a real tail cut, not truncate-to-zero
+        await session.Execute('DELETE FROM identity_audit WHERE tenant_id = $1 AND seq >= $2', [t, 2])
         await assert.rejects(SqlAuditStore.Open(session, await anchoring(session)), AuditAnchorMismatch)
     })
 

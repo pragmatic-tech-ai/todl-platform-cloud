@@ -29,7 +29,6 @@ export class SqlAuditStore implements IAuditSink
     private readonly session: ISqlSession
     private readonly chain: HashChainedAuditSink
     private readonly writes = new Map<string, Promise<unknown>>()
-
     private readonly anchoring?: AuditAnchoring
 
     private constructor(session: ISqlSession, chain: HashChainedAuditSink, anchoring?: AuditAnchoring)
@@ -123,6 +122,8 @@ export class SqlAuditStore implements IAuditSink
         const detail = JSON.stringify([...event.Detail])
         await this.session.Execute(SqlAuditStore.InsertSql, [event.TenantId, next.Sequence, event.Kind, event.PrincipalId, event.At.toISOString(), detail, next.Hash, next.PrevHash])
         this.chain.Append(next)
+        // The row is already inserted and chained above; a throw here only defers this event's
+        // checkpoint — caught as an un-anchored tail on the next Open, never a checkpoint ahead of its event.
         if (this.anchoring !== undefined)
         {
             await this.anchoring.CheckpointIfDue(event.TenantId, this.chain.Records(event.TenantId))
