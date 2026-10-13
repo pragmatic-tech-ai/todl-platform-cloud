@@ -1,29 +1,26 @@
 import type { ISqlSession, SqlRow } from '@pragmatic-tech-ai/todl'
 import { AuditEvent } from '@pragmatic-tech-ai/todl-identity'
 import type { AuditEventKind, IAuditSink } from '@pragmatic-tech-ai/todl-identity'
-import { HashChainedAuditSink } from '@pragmatic-tech-ai/todl-identity-host'
+import { AuditTamperDetected, HashChainedAuditSink } from '@pragmatic-tech-ai/todl-identity-host'
 import type { ChainedAuditRecord } from '@pragmatic-tech-ai/todl-identity-host'
 
-/** Postgres-backed audit sink. Mirrors FileAuditSink: it persists only the ordered raw event log (per-tenant
- *  sequence) and rebuilds the deterministic hash chain by replaying persisted events through a fresh
- *  HashChainedAuditSink on Open. Record chains in memory then inserts the raw event; Verify/Records delegate.
+/** Postgres-backed audit sink. Persists each event's chain hash and prev_hash alongside the raw event and VERIFIES
+ *  them on Open: the chain is recomputed from the persisted events and compared with the persisted hashes. Any
+ *  mismatch, or a gap/reorder in the per-tenant sequence, makes Open throw AuditTamperDetected (fail-closed).
+ *  Legacy rows written before the hash columns existed (NULL hash) are backfilled on Open.
  *
- *  Tamper scope: tamper-evidence is in-session. HashChainedAuditSink detects mutation of in-memory records
- *  between Record and Verify, and replay is deterministic (identical hashes across reopen). Because the chain is
- *  recomputed from the raw event log on Open, tampering with persisted rows (editing, reordering, or deleting them
- *  in the database) is NOT detected: reopen simply rebuilds a fresh valid chain over whatever rows exist. This
- *  matches FileAuditSink; persisted hash-chain tamper-evidence is tracked as a follow-up.
- *
- *  Single-writer: Record is single-writer per tenant. It computes the next per-tenant seq as
- *  COALESCE(MAX(seq),-1)+1 then inserts, and chains the event in memory before the insert. Concurrent Record calls
- *  for one tenant can read the same MAX(seq); the unique index rejects the loser, but its event is already in the
- *  in-memory chain. A single writer per tenant is assumed. */
+ *  Record is serialized per tenant through a promise queue. The sequence comes from the in-memory chain (no
+ *  MAX(seq) query) and the event is inserted BEFORE it is appended to the chain, so a rejected insert (unique
+ *  conflict) never leaves the losing event in the in-memory chain. */
 export class SqlAuditStore implements IAuditSink
 {
     private static readonly Table = 'identity_audit'
+    private static readonly HashColumn = 'hash'
+    private static readonly PrevHashColumn = 'prev_hash'
 
     private readonly session: ISqlSession
     private readonly chain: HashChainedAuditSink
+    private readonly writes = new Map<string, Promise<unknown>>()
 
     private constructor(session: ISqlSession, chain: HashChainedAuditSink)
     {
@@ -35,22 +32,54 @@ export class SqlAuditStore implements IAuditSink
     {
         await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlAuditStore.Table} (tenant_id text, seq integer, kind integer, principal_id text, at text, detail text)`, [])
         await session.Execute(`CREATE UNIQUE INDEX IF NOT EXISTS ${SqlAuditStore.Table}_pk ON ${SqlAuditStore.Table} (tenant_id, seq)`, [])
+        for (const column of [SqlAuditStore.HashColumn, SqlAuditStore.PrevHashColumn])
+        {
+            try
+            {
+                await session.Execute(`ALTER TABLE ${SqlAuditStore.Table} ADD COLUMN ${column} text`, [])
+            }
+            catch
+            {
+                // column already present
+            }
+        }
         const chain = new HashChainedAuditSink()
-        const rows = await session.Query(`SELECT tenant_id, seq, kind, principal_id, at, detail FROM ${SqlAuditStore.Table} ORDER BY tenant_id, seq`, [])
+        const rows = await session.Query(`SELECT tenant_id, seq, kind, principal_id, at, detail, hash, prev_hash FROM ${SqlAuditStore.Table} ORDER BY tenant_id, seq`, [])
         for (const row of rows)
         {
-            await chain.Record(SqlAuditStore.ToEvent(row))
+            const event = SqlAuditStore.ToEvent(row)
+            const expected = chain.Next(event.TenantId, event)
+            if (Number(row.seq) !== expected.Sequence)
+            {
+                throw new AuditTamperDetected(event.TenantId, expected.Sequence)
+            }
+            if (row.hash === null || row.hash === undefined)
+            {
+                await session.Execute(`UPDATE ${SqlAuditStore.Table} SET hash = $1, prev_hash = $2 WHERE tenant_id = $3 AND seq = $4`, [expected.Hash, expected.PrevHash, event.TenantId, expected.Sequence])
+            }
+            else if (String(row.hash) !== expected.Hash || String(row.prev_hash) !== expected.PrevHash)
+            {
+                throw new AuditTamperDetected(event.TenantId, expected.Sequence)
+            }
+            chain.Append(expected)
         }
         return new SqlAuditStore(session, chain)
     }
 
     public async Record(event: AuditEvent): Promise<void>
     {
-        await this.chain.Record(event)
-        const rows = await this.session.Query(`SELECT COALESCE(MAX(seq), -1) + 1 AS next FROM ${SqlAuditStore.Table} WHERE tenant_id = $1`, [event.TenantId])
-        const seq = Number(rows[0]!.next)
+        const prior = this.writes.get(event.TenantId) ?? Promise.resolve()
+        const mine = prior.then(() => this.DoRecord(event), () => this.DoRecord(event))
+        this.writes.set(event.TenantId, mine.catch(() => undefined))
+        await mine
+    }
+
+    private async DoRecord(event: AuditEvent): Promise<void>
+    {
+        const next = this.chain.Next(event.TenantId, event)
         const detail = JSON.stringify([...event.Detail])
-        await this.session.Execute(`INSERT INTO ${SqlAuditStore.Table} (tenant_id, seq, kind, principal_id, at, detail) VALUES ($1, $2, $3, $4, $5, $6)`, [event.TenantId, seq, event.Kind, event.PrincipalId, event.At.toISOString(), detail])
+        await this.session.Execute(`INSERT INTO ${SqlAuditStore.Table} (tenant_id, seq, kind, principal_id, at, detail, hash, prev_hash) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`, [event.TenantId, next.Sequence, event.Kind, event.PrincipalId, event.At.toISOString(), detail, next.Hash, next.PrevHash])
+        this.chain.Append(next)
     }
 
     public Verify(tenantId: string): boolean
