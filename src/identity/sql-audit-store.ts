@@ -2,7 +2,7 @@ import type { ISqlSession, SqlRow } from '@pragmatic-tech-ai/todl'
 import { AuditEvent } from '@pragmatic-tech-ai/todl-identity'
 import type { AuditEventKind, IAuditSink } from '@pragmatic-tech-ai/todl-identity'
 import { AuditTamperDetected, HashChainedAuditSink } from '@pragmatic-tech-ai/todl-identity-host'
-import type { ChainedAuditRecord } from '@pragmatic-tech-ai/todl-identity-host'
+import type { AuditAnchoring, ChainedAuditRecord } from '@pragmatic-tech-ai/todl-identity-host'
 
 /** Postgres-backed audit sink. Persists each event's chain hash and prev_hash alongside the raw event and VERIFIES
  *  them on Open: the chain is recomputed from the persisted events and compared with the persisted hashes. Any
@@ -30,10 +30,13 @@ export class SqlAuditStore implements IAuditSink
     private readonly chain: HashChainedAuditSink
     private readonly writes = new Map<string, Promise<unknown>>()
 
-    private constructor(session: ISqlSession, chain: HashChainedAuditSink)
+    private readonly anchoring?: AuditAnchoring
+
+    private constructor(session: ISqlSession, chain: HashChainedAuditSink, anchoring?: AuditAnchoring)
     {
         this.session = session
         this.chain = chain
+        this.anchoring = anchoring
     }
 
     private static AddColumnSql(column: string): string
@@ -41,7 +44,7 @@ export class SqlAuditStore implements IAuditSink
         return `ALTER TABLE ${SqlAuditStore.Table} ADD COLUMN ${column} text`
     }
 
-    public static async Open(session: ISqlSession): Promise<SqlAuditStore>
+    public static async Open(session: ISqlSession, anchoring?: AuditAnchoring): Promise<SqlAuditStore>
     {
         await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlAuditStore.Table} (tenant_id text, seq integer, kind integer, principal_id text, at text, detail text)`, [])
         await session.Execute(`CREATE UNIQUE INDEX IF NOT EXISTS ${SqlAuditStore.Table}_pk ON ${SqlAuditStore.Table} (tenant_id, seq)`, [])
@@ -60,10 +63,12 @@ export class SqlAuditStore implements IAuditSink
         }
         const chain = new HashChainedAuditSink()
         const hashedTenants = new Set<string>()
+        const tenants = new Set<string>()
         const rows = await session.Query(SqlAuditStore.SelectSql, [])
         for (const row of rows)
         {
             const event = SqlAuditStore.ToEvent(row)
+            tenants.add(event.TenantId)
             const expected = chain.Next(event.TenantId, event)
             if (Number(row.seq) !== expected.Sequence)
             {
@@ -89,7 +94,11 @@ export class SqlAuditStore implements IAuditSink
             }
             chain.Append(expected)
         }
-        return new SqlAuditStore(session, chain)
+        if (anchoring !== undefined)
+        {
+            await anchoring.VerifyAll(chain, [...tenants])
+        }
+        return new SqlAuditStore(session, chain, anchoring)
     }
 
     public async Record(event: AuditEvent): Promise<void>
@@ -114,6 +123,10 @@ export class SqlAuditStore implements IAuditSink
         const detail = JSON.stringify([...event.Detail])
         await this.session.Execute(SqlAuditStore.InsertSql, [event.TenantId, next.Sequence, event.Kind, event.PrincipalId, event.At.toISOString(), detail, next.Hash, next.PrevHash])
         this.chain.Append(next)
+        if (this.anchoring !== undefined)
+        {
+            await this.anchoring.CheckpointIfDue(event.TenantId, this.chain.Records(event.TenantId))
+        }
     }
 
     public Verify(tenantId: string): boolean
