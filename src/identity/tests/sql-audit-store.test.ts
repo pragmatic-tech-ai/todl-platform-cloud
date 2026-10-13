@@ -161,4 +161,17 @@ SqlTestSessions.Describe('SqlAuditStore', (makeSession, backend) =>
         assert.equal(reopened.Records(t).length, 2)
         assert.equal(reopened.Verify(t), true)
     })
+
+    test(`${backend}: nulling a hash after hashed rows is tamper, not a backfill`, async () =>
+    {
+        const session = await makeSession()
+        const t = `audit-${randomUUID()}`
+        const store = await SqlAuditStore.Open(session)
+        await store.Record(event(t, new Map([['a', '1']])))
+        await store.Record(event(t, new Map([['b', '2']])))
+        await store.Record(event(t, new Map([['c', '3']])))
+        await session.Execute('UPDATE identity_audit SET hash = NULL, prev_hash = NULL, detail = $1 WHERE tenant_id = $2 AND seq = 1', [JSON.stringify([['b', 'evil']]), t])
+        await assert.rejects(() => SqlAuditStore.Open(session), AuditTamperDetected)
+        await session.Execute('DELETE FROM identity_audit WHERE tenant_id = $1', [t])
+    })
 })
