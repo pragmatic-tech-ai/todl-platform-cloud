@@ -1,5 +1,5 @@
 import type { ISqlSession, SqlRow } from '@pragmatic-tech-ai/todl'
-import { Principal, PrincipalKind, LocalAccount } from '@pragmatic-tech-ai/todl-identity'
+import { Principal, PrincipalKind, LocalAccount, LocalAccountNotFoundError } from '@pragmatic-tech-ai/todl-identity'
 import type { Tenant, ILocalAccountStore, IPrincipalDirectory } from '@pragmatic-tech-ai/todl-identity'
 
 /** Postgres-backed local account store (+ principal directory). One row per (tenant_id, principal_id); email
@@ -20,7 +20,7 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
 
     public static async Open(session: ISqlSession): Promise<SqlLocalAccountStore>
     {
-        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlLocalAccountStore.Table} (tenant_id text, principal_id text, email text, secret_ref text, groups text, PRIMARY KEY (tenant_id, principal_id), UNIQUE (tenant_id, email))`, [])
+        await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlLocalAccountStore.Table} (tenant_id text, principal_id text, email text, secret_ref text, groups text, disabled boolean NOT NULL DEFAULT false, PRIMARY KEY (tenant_id, principal_id), UNIQUE (tenant_id, email))`, [])
         return new SqlLocalAccountStore(session)
     }
 
@@ -34,25 +34,40 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
         {
             throw new Error(SqlLocalAccountStore.DuplicatePrincipalMessage)
         }
-        await this.session.Execute(`INSERT INTO ${SqlLocalAccountStore.Table} (tenant_id, principal_id, email, secret_ref, groups) VALUES ($1, $2, $3, $4, $5)`, [tenant.Id, principalId, email, secretRef, JSON.stringify([])])
-        return new LocalAccount(principalId, tenant.Id, email, secretRef)
+        await this.session.Execute(`INSERT INTO ${SqlLocalAccountStore.Table} (tenant_id, principal_id, email, secret_ref, groups, disabled) VALUES ($1, $2, $3, $4, $5, $6)`, [tenant.Id, principalId, email, secretRef, JSON.stringify([]), false])
+        return new LocalAccount(principalId, tenant.Id, email, secretRef, false)
     }
 
     public async FindByEmail(tenant: Tenant, email: string): Promise<LocalAccount | null>
     {
-        const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1 AND email = $2`, [tenant.Id, email])
+        const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref, disabled FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1 AND email = $2`, [tenant.Id, email])
         return SqlLocalAccountStore.ToAccount(rows[0])
     }
 
     public async FindByPrincipalId(tenant: Tenant, principalId: string): Promise<LocalAccount | null>
     {
-        const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1 AND principal_id = $2`, [tenant.Id, principalId])
+        const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref, disabled FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1 AND principal_id = $2`, [tenant.Id, principalId])
         return SqlLocalAccountStore.ToAccount(rows[0])
+    }
+
+    public async Disable(tenant: Tenant, principalId: string): Promise<void>
+    {
+        const changed = await this.session.Execute(`UPDATE ${SqlLocalAccountStore.Table} SET disabled = true WHERE tenant_id = $1 AND principal_id = $2`, [tenant.Id, principalId])
+        if (changed === 0)
+        {
+            throw new LocalAccountNotFoundError(principalId)
+        }
+    }
+
+    public async ListAccounts(tenant: Tenant): Promise<readonly LocalAccount[]>
+    {
+        const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref, disabled FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1`, [tenant.Id])
+        return rows.map(row => SqlLocalAccountStore.ToAccount(row)!)
     }
 
     public async Lookup(principalId: string, tenant: Tenant): Promise<Principal | null>
     {
-        const rows = await this.session.Query(`SELECT groups FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1 AND principal_id = $2`, [tenant.Id, principalId])
+        const rows = await this.session.Query(`SELECT groups FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1 AND principal_id = $2 AND disabled = false`, [tenant.Id, principalId])
         if (rows[0] === undefined)
         {
             return null
@@ -76,7 +91,7 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
         {
             return null
         }
-        return new LocalAccount(String(row.principal_id), String(row.tenant_id), String(row.email), String(row.secret_ref))
+        return new LocalAccount(String(row.principal_id), String(row.tenant_id), String(row.email), String(row.secret_ref), row.disabled === true)
     }
 
     private static Groups(row: SqlRow): readonly string[]

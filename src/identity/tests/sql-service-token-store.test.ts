@@ -64,4 +64,30 @@ SqlTestSessions.Describe('SqlServiceTokenStore', (makeSession, backend) =>
         await store.Revoke(other, issued.Grant.TokenRef)
         assert.notEqual(await store.Resolve(tenant, new PresentedSecret(issued.Token)), null)
     })
+
+    test(`${backend}: List is tenant-isolated, reflects revocation, and exposes no token value`, async () =>
+    {
+        const t1 = new Tenant(`tok-${randomUUID()}`, TenantKind.SelfHosted, 'T1')
+        const t2 = new Tenant(`tok-${randomUUID()}`, TenantKind.SelfHosted, 'T2')
+        const store = await SqlServiceTokenStore.Open(await makeSession())
+        const expires = new Date('2099-01-01T00:00:00Z')
+        const a = await store.Issue(t1, 'svc1', ['read', 'write'], expires)
+        const b = await store.Issue(t1, 'svc2', [], null)
+        await store.Issue(t2, 'svc3', ['x'], null)
+        await store.Revoke(t1, b.Grant.TokenRef)
+        const listed = await store.List(t1)
+        assert.equal(listed.length, 2)
+        const first = listed.find(s => s.TokenRef === a.Grant.TokenRef)!
+        assert.equal(first.PrincipalId, 'svc1')
+        assert.deepEqual(first.Scopes, ['read', 'write'])
+        assert.equal(first.ExpiresAt!.getTime(), expires.getTime())
+        assert.equal(first.Revoked, false)
+        const second = listed.find(s => s.TokenRef === b.Grant.TokenRef)!
+        assert.equal(second.ExpiresAt, null)
+        assert.equal(second.Revoked, true)
+        assert.equal(JSON.stringify(listed).includes(a.Token), false)
+        const other = await store.List(t2)
+        assert.equal(other.length, 1)
+        assert.equal(other[0]!.PrincipalId, 'svc3')
+    })
 })

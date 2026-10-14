@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from 'node:crypto'
 import type { ISqlSession } from '@pragmatic-tech-ai/todl'
-import { ServiceTokenGrant } from '@pragmatic-tech-ai/todl-identity'
+import { ServiceTokenGrant, ServiceTokenSummary } from '@pragmatic-tech-ai/todl-identity'
 import type { Tenant, PresentedSecret, IServiceTokenStore } from '@pragmatic-tech-ai/todl-identity'
 
 /** Postgres-backed service-token store. Mirrors FileServiceTokenStore: a 32-byte base64url token, stored by
@@ -61,6 +61,12 @@ export class SqlServiceTokenStore implements IServiceTokenStore
     {
         const hash = tokenRef.slice(tokenRef.lastIndexOf(SqlServiceTokenStore.RefSeparator) + 1)
         await this.session.Execute(`UPDATE ${SqlServiceTokenStore.Table} SET revoked = $1 WHERE hash = $2 AND token_ref = $3 AND tenant_id = $4`, [true, hash, tokenRef, tenant.Id])
+    }
+
+    public async List(tenant: Tenant): Promise<readonly ServiceTokenSummary[]>
+    {
+        const rows = await this.session.Query(`SELECT token_ref, principal_id, scopes, expires_at, revoked FROM ${SqlServiceTokenStore.Table} WHERE tenant_id = $1`, [tenant.Id])
+        return rows.map(row => new ServiceTokenSummary(String(row.token_ref), String(row.principal_id), JSON.parse(String(row.scopes)) as string[], row.expires_at === null ? null : new Date(String(row.expires_at)), row.revoked === true))
     }
 
     private static Hash(token: string): string

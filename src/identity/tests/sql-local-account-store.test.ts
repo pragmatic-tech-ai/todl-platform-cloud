@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { Principal, PrincipalKind, Tenant, TenantKind } from '@pragmatic-tech-ai/todl-identity'
+import { LocalAccountNotFoundError, Principal, PrincipalKind, Tenant, TenantKind } from '@pragmatic-tech-ai/todl-identity'
 import { SqlTestSessions } from '../../testing/sql-test-sessions.js'
 import { SqlLocalAccountStore } from '../sql-local-account-store.js'
 
@@ -70,5 +70,39 @@ SqlTestSessions.Describe('SqlLocalAccountStore', (makeSession, backend) =>
         const principal = new Principal('ghost', tenant.Id, PrincipalKind.User, new Map(), [])
         assert.deepEqual(await store.GroupsOf(principal), [])
         assert.equal(await store.Lookup('ghost', tenant), null)
+    })
+
+    test(`${backend}: Disable hides the account from Lookup but keeps it listed`, async () =>
+    {
+        const tenant = new Tenant(`acct-${randomUUID()}`, TenantKind.SelfHosted, 'T1')
+        const store = await SqlLocalAccountStore.Open(await makeSession())
+        await store.CreateAccount(tenant, 'd@x.io', 'p1', 'r')
+        assert.equal((await store.FindByPrincipalId(tenant, 'p1'))!.Disabled, false)
+        await store.Disable(tenant, 'p1')
+        assert.equal(await store.Lookup('p1', tenant), null)
+        assert.equal((await store.FindByPrincipalId(tenant, 'p1'))!.Disabled, true)
+        const listed = await store.ListAccounts(tenant)
+        assert.equal(listed.length, 1)
+        assert.equal(listed[0]!.Disabled, true)
+    })
+
+    test(`${backend}: Disable of an unknown principal throws LocalAccountNotFoundError`, async () =>
+    {
+        const tenant = new Tenant(`acct-${randomUUID()}`, TenantKind.SelfHosted, 'T1')
+        const store = await SqlLocalAccountStore.Open(await makeSession())
+        await assert.rejects(() => store.Disable(tenant, 'ghost'), LocalAccountNotFoundError)
+    })
+
+    test(`${backend}: ListAccounts is tenant-isolated`, async () =>
+    {
+        const t1 = new Tenant(`acct-${randomUUID()}`, TenantKind.SelfHosted, 'T1')
+        const t2 = new Tenant(`acct-${randomUUID()}`, TenantKind.SelfHosted, 'T2')
+        const store = await SqlLocalAccountStore.Open(await makeSession())
+        await store.CreateAccount(t1, 'a@x.io', 'p1', 'r')
+        await store.CreateAccount(t1, 'b@x.io', 'p2', 'r')
+        await store.CreateAccount(t2, 'c@x.io', 'p3', 'r')
+        assert.deepEqual((await store.ListAccounts(t1)).map(a => a.PrincipalId).sort(), ['p1', 'p2'])
+        assert.deepEqual((await store.ListAccounts(t2)).map(a => a.PrincipalId), ['p3'])
+        await assert.rejects(() => store.Disable(t2, 'p1'), LocalAccountNotFoundError)
     })
 })
