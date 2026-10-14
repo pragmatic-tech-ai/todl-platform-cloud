@@ -8,6 +8,7 @@ import type { Role, ResourceKind, Tenant, IRoleGrantStore } from '@pragmatic-tec
 export class SqlRoleGrantStore implements IRoleGrantStore
 {
     private static readonly Table = 'identity_role_grants'
+    private static readonly SelectColumns = 'SELECT subject, role, resource_kind, resource_tenant_id, resource_path'
 
     private readonly session: ISqlSession
 
@@ -25,14 +26,14 @@ export class SqlRoleGrantStore implements IRoleGrantStore
     public async GrantsFor(subject: string, _tenant: Tenant): Promise<readonly Grant[]>
     {
         // Grant order is not significant: GrantsFor returns an unordered bag the authorization engine scans; a serial column is intentionally avoided (plan's no-serial constraint).
-        const rows = await this.session.Query(`SELECT subject, role, resource_kind, resource_tenant_id, resource_path FROM ${SqlRoleGrantStore.Table} WHERE subject = $1`, [subject])
+        const rows = await this.session.Query(`${SqlRoleGrantStore.SelectColumns} FROM ${SqlRoleGrantStore.Table} WHERE subject = $1`, [subject])
         return rows.map(SqlRoleGrantStore.ToGrant)
     }
 
     /** Every grant whose resource EXACTLY matches (Kind + TenantId + element-wise Path); not prefix/cover. */
     public async GrantsOn(resource: ResourceRef): Promise<readonly Grant[]>
     {
-        const rows = await this.session.Query(`SELECT subject, role, resource_kind, resource_tenant_id, resource_path FROM ${SqlRoleGrantStore.Table} WHERE resource_kind = $1 AND resource_tenant_id = $2 AND resource_path = $3`, [resource.Kind, resource.TenantId, JSON.stringify([...resource.Path])])
+        const rows = await this.session.Query(`${SqlRoleGrantStore.SelectColumns} FROM ${SqlRoleGrantStore.Table} WHERE resource_kind = $1 AND resource_tenant_id = $2 AND resource_path = $3`, [resource.Kind, resource.TenantId, JSON.stringify([...resource.Path])])
         return rows.map(SqlRoleGrantStore.ToGrant)
     }
 
