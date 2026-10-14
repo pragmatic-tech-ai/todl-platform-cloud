@@ -29,6 +29,13 @@ export class SqlRoleGrantStore implements IRoleGrantStore
         return rows.map(SqlRoleGrantStore.ToGrant)
     }
 
+    /** Every grant whose resource EXACTLY matches (Kind + TenantId + element-wise Path); not prefix/cover. */
+    public async GrantsOn(resource: ResourceRef): Promise<readonly Grant[]>
+    {
+        const rows = await this.session.Query(`SELECT subject, role, resource_kind, resource_tenant_id, resource_path FROM ${SqlRoleGrantStore.Table} WHERE resource_kind = $1 AND resource_tenant_id = $2 AND resource_path = $3`, [resource.Kind, resource.TenantId, JSON.stringify([...resource.Path])])
+        return rows.map(SqlRoleGrantStore.ToGrant)
+    }
+
     public async Save(grant: Grant): Promise<void>
     {
         await this.session.Execute(`INSERT INTO ${SqlRoleGrantStore.Table} (subject, role, resource_kind, resource_tenant_id, resource_path) VALUES ($1, $2, $3, $4, $5)`, [grant.Subject, grant.Role, grant.Resource.Kind, grant.Resource.TenantId, JSON.stringify([...grant.Resource.Path])])

@@ -68,4 +68,24 @@ SqlTestSessions.Describe('SqlRoleGrantStore', (makeSession, backend) =>
         await store.Revoke(new Grant(p5, Role.Owner, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x', 'y'])))
         assert.equal((await store.GrantsFor(p5, tenant)).length, 1)
     })
+
+    test(`${backend}: GrantsOn returns only exact-resource grants for the queried tenant`, async () =>
+    {
+        const store = await SqlRoleGrantStore.Open(await makeSession())
+        const a1 = `subj-${randomUUID()}`
+        const a2 = `subj-${randomUUID()}`
+        const b1 = `subj-${randomUUID()}`
+        await store.Save(new Grant(a1, Role.Admin, new ResourceRef(ResourceKind.Tenant, 'on-t1', [])))
+        await store.Save(new Grant(a2, Role.Viewer, new ResourceRef(ResourceKind.Tenant, 'on-t1', [])))
+        await store.Save(new Grant(b1, Role.Admin, new ResourceRef(ResourceKind.Tenant, 'on-t2', [])))
+        await store.Save(new Grant(a1, Role.Editor, new ResourceRef(ResourceKind.Project, 'on-t1', ['p'])))
+        const grants = await store.GrantsOn(new ResourceRef(ResourceKind.Tenant, 'on-t1', []))
+        assert.deepEqual(grants.map(g => g.Subject).sort(), [a1, a2].sort())
+        for (const g of grants)
+        {
+            assert.equal(g.Resource.Kind, ResourceKind.Tenant)
+            assert.equal(g.Resource.TenantId, 'on-t1')
+            assert.deepEqual([...g.Resource.Path], [])
+        }
+    })
 })
