@@ -21,6 +21,7 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
     public static async Open(session: ISqlSession): Promise<SqlLocalAccountStore>
     {
         await session.Execute(`CREATE TABLE IF NOT EXISTS ${SqlLocalAccountStore.Table} (tenant_id text, principal_id text, email text, secret_ref text, groups text, disabled boolean NOT NULL DEFAULT false, PRIMARY KEY (tenant_id, principal_id), UNIQUE (tenant_id, email))`, [])
+        await session.Execute(`ALTER TABLE ${SqlLocalAccountStore.Table} ADD COLUMN IF NOT EXISTS disabled boolean NOT NULL DEFAULT false`, [])
         return new SqlLocalAccountStore(session)
     }
 
@@ -62,7 +63,7 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
     public async ListAccounts(tenant: Tenant): Promise<readonly LocalAccount[]>
     {
         const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref, disabled FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1`, [tenant.Id])
-        return rows.map(row => SqlLocalAccountStore.ToAccount(row)!)
+        return rows.map(row => SqlLocalAccountStore.MapRow(row))
     }
 
     public async Lookup(principalId: string, tenant: Tenant): Promise<Principal | null>
@@ -91,6 +92,11 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
         {
             return null
         }
+        return SqlLocalAccountStore.MapRow(row)
+    }
+
+    private static MapRow(row: SqlRow): LocalAccount
+    {
         return new LocalAccount(String(row.principal_id), String(row.tenant_id), String(row.email), String(row.secret_ref), row.disabled === true)
     }
 
