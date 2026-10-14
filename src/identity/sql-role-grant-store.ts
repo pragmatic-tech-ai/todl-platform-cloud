@@ -34,6 +34,11 @@ export class SqlRoleGrantStore implements IRoleGrantStore
         await this.session.Execute(`INSERT INTO ${SqlRoleGrantStore.Table} (subject, role, resource_kind, resource_tenant_id, resource_path) VALUES ($1, $2, $3, $4, $5)`, [grant.Subject, grant.Role, grant.Resource.Kind, grant.Resource.TenantId, JSON.stringify([...grant.Resource.Path])])
     }
 
+    public async Revoke(grant: Grant): Promise<void>
+    {
+        await this.session.Execute(`DELETE FROM ${SqlRoleGrantStore.Table} WHERE subject = $1 AND role = $2 AND resource_kind = $3 AND resource_tenant_id = $4 AND resource_path = $5`, [grant.Subject, grant.Role, grant.Resource.Kind, grant.Resource.TenantId, JSON.stringify([...grant.Resource.Path])])
+    }
+
     private static ToGrant(row: SqlRow): Grant
     {
         return new Grant(String(row.subject), Number(row.role) as Role, new ResourceRef(Number(row.resource_kind) as ResourceKind, String(row.resource_tenant_id), JSON.parse(String(row.resource_path)) as string[]))

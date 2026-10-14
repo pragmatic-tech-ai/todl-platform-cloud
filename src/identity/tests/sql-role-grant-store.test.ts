@@ -46,4 +46,26 @@ SqlTestSessions.Describe('SqlRoleGrantStore', (makeSession, backend) =>
             assert.deepEqual([...g.Resource.Path], ['x'])
         }
     })
+
+    test(`${backend}: Revoke removes the matching grant and leaves a different one`, async () =>
+    {
+        const p4 = `subj-${randomUUID()}`
+        const store = await SqlRoleGrantStore.Open(await makeSession())
+        await store.Save(new Grant(p4, Role.Viewer, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x'])))
+        await store.Save(new Grant(p4, Role.Editor, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x'])))
+        await store.Revoke(new Grant(p4, Role.Editor, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x'])))
+        const grants = await store.GrantsFor(p4, tenant)
+        assert.equal(grants.length, 1)
+        assert.equal(grants[0]!.Role, Role.Viewer)
+    })
+
+    test(`${backend}: Revoke on a non-existent grant affects nothing`, async () =>
+    {
+        const p5 = `subj-${randomUUID()}`
+        const store = await SqlRoleGrantStore.Open(await makeSession())
+        await store.Save(new Grant(p5, Role.Editor, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x', 'y'])))
+        await store.Revoke(new Grant(p5, Role.Editor, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x'])))
+        await store.Revoke(new Grant(p5, Role.Owner, new ResourceRef(ResourceKind.Project, 'grant-t1', ['x', 'y'])))
+        assert.equal((await store.GrantsFor(p5, tenant)).length, 1)
+    })
 })
