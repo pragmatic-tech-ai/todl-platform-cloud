@@ -105,4 +105,18 @@ SqlTestSessions.Describe('SqlLocalAccountStore', (makeSession, backend) =>
         assert.deepEqual((await store.ListAccounts(t2)).map(a => a.PrincipalId), ['p3'])
         await assert.rejects(() => store.Disable(t2, 'p1'), LocalAccountNotFoundError)
     })
+
+    test(`${backend}: Enable re-enables a disabled account and rejects an unknown principal`, async () =>
+    {
+        const tenant = new Tenant(`acct-${randomUUID()}`, TenantKind.SelfHosted, 'T1')
+        const store = await SqlLocalAccountStore.Open(await makeSession())
+        await store.CreateAccount(tenant, 'e@x.io', 'p1', 'r')
+        await store.Disable(tenant, 'p1')
+        assert.equal(await store.Lookup('p1', tenant), null)
+        assert.equal((await store.FindByPrincipalId(tenant, 'p1'))!.Disabled, true)
+        await store.Enable(tenant, 'p1')
+        assert.equal((await store.FindByPrincipalId(tenant, 'p1'))!.Disabled, false)
+        assert.equal((await store.Lookup('p1', tenant))!.Id, 'p1')
+        await assert.rejects(() => store.Enable(tenant, 'nobody'), LocalAccountNotFoundError)
+    })
 })

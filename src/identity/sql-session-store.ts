@@ -64,6 +64,11 @@ export class SqlSessionStore implements ISessionManager
         await this.session.Execute(`DELETE FROM ${SqlSessionStore.Table} WHERE hash = $1`, [SqlSessionStore.Hash(sessionId)])
     }
 
+    public async RevokeAllFor(principalId: string): Promise<void>
+    {
+        await this.session.Execute(`DELETE FROM ${SqlSessionStore.Table} WHERE principal_id = $1`, [principalId])
+    }
+
     private static Hash(token: string): string
     {
         return createHash(SqlSessionStore.HashAlgorithm).update(token).digest(SqlSessionStore.HashEncoding)

@@ -64,4 +64,19 @@ SqlTestSessions.Describe('SqlSessionStore', (makeSession, backend) =>
         const rows = await session.Query('SELECT * FROM identity_sessions WHERE tenant_id = $1', [principal.TenantId])
         assert.equal(rows.length, 0)
     })
+
+    test(`${backend}: RevokeAllFor drops every session of one principal and leaves others`, async () =>
+    {
+        const tenant = `sess-${randomUUID()}`
+        const a = new Principal('pA', tenant, PrincipalKind.User, new Map(), [])
+        const b = new Principal('pB', tenant, PrincipalKind.User, new Map(), [])
+        const store = await SqlSessionStore.Open(await makeSession())
+        const a1 = await store.Issue(a)
+        const a2 = await store.Issue(a)
+        const b1 = await store.Issue(b)
+        await store.RevokeAllFor('pA')
+        assert.equal(await store.Validate(a1.Id), null)
+        assert.equal(await store.Validate(a2.Id), null)
+        assert.notEqual(await store.Validate(b1.Id), null)
+    })
 })

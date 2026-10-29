@@ -60,6 +60,15 @@ export class SqlLocalAccountStore implements ILocalAccountStore, IPrincipalDirec
         }
     }
 
+    public async Enable(tenant: Tenant, principalId: string): Promise<void>
+    {
+        const changed = await this.session.Execute(`UPDATE ${SqlLocalAccountStore.Table} SET disabled = false WHERE tenant_id = $1 AND principal_id = $2`, [tenant.Id, principalId])
+        if (changed === 0)
+        {
+            throw new LocalAccountNotFoundError(principalId)
+        }
+    }
+
     public async ListAccounts(tenant: Tenant): Promise<readonly LocalAccount[]>
     {
         const rows = await this.session.Query(`SELECT tenant_id, principal_id, email, secret_ref, disabled FROM ${SqlLocalAccountStore.Table} WHERE tenant_id = $1`, [tenant.Id])
