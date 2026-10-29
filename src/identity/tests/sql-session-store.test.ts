@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID, createHash } from 'node:crypto'
-import { Principal, PrincipalKind, AuthMethod } from '@pragmatic-tech-ai/todl-identity'
+import { Principal, PrincipalKind, AuthMethod, Tenant, TenantKind } from '@pragmatic-tech-ai/todl-identity'
 import { SqlTestSessions } from '../../testing/sql-test-sessions.js'
 import { SqlSessionStore } from '../sql-session-store.js'
 
@@ -68,15 +68,20 @@ SqlTestSessions.Describe('SqlSessionStore', (makeSession, backend) =>
     test(`${backend}: RevokeAllFor drops every session of one principal and leaves others`, async () =>
     {
         const tenant = `sess-${randomUUID()}`
-        const a = new Principal('pA', tenant, PrincipalKind.User, new Map(), [])
-        const b = new Principal('pB', tenant, PrincipalKind.User, new Map(), [])
+        const idA = `pA-${randomUUID()}`
+        const idB = `pB-${randomUUID()}`
+        const a = new Principal(idA, tenant, PrincipalKind.User, new Map(), [])
+        const b = new Principal(idB, tenant, PrincipalKind.User, new Map(), [])
+        const aOtherTenant = new Principal(idA, `sess-${randomUUID()}`, PrincipalKind.User, new Map(), [])
         const store = await SqlSessionStore.Open(await makeSession())
         const a1 = await store.Issue(a)
         const a2 = await store.Issue(a)
         const b1 = await store.Issue(b)
-        await store.RevokeAllFor('pA')
+        const a3 = await store.Issue(aOtherTenant)
+        await store.RevokeAllFor(new Tenant(tenant, TenantKind.Saas, 'Acme'), idA)
         assert.equal(await store.Validate(a1.Id), null)
         assert.equal(await store.Validate(a2.Id), null)
         assert.notEqual(await store.Validate(b1.Id), null)
+        assert.notEqual(await store.Validate(a3.Id), null)
     })
 })

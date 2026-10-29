@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto'
 import type { ISqlSession } from '@pragmatic-tech-ai/todl'
 import { Session, AuthMethod } from '@pragmatic-tech-ai/todl-identity'
-import type { Principal, ISessionManager } from '@pragmatic-tech-ai/todl-identity'
+import type { Principal, ISessionManager, Tenant } from '@pragmatic-tech-ai/todl-identity'
 
 /** Postgres-backed session manager. Mirrors FileSessionStore: a 32-byte base64url token stored by its
  *  sha256(base64url) hash (Session.Id is the raw token, never stored); TTL default 3_600_000 ms, injectable
@@ -64,9 +64,9 @@ export class SqlSessionStore implements ISessionManager
         await this.session.Execute(`DELETE FROM ${SqlSessionStore.Table} WHERE hash = $1`, [SqlSessionStore.Hash(sessionId)])
     }
 
-    public async RevokeAllFor(principalId: string): Promise<void>
+    public async RevokeAllFor(tenant: Tenant, principalId: string): Promise<void>
     {
-        await this.session.Execute(`DELETE FROM ${SqlSessionStore.Table} WHERE principal_id = $1`, [principalId])
+        await this.session.Execute(`DELETE FROM ${SqlSessionStore.Table} WHERE principal_id = $1 AND tenant_id = $2`, [principalId, tenant.Id])
     }
 
     private static Hash(token: string): string
